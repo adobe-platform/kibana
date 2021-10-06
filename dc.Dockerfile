@@ -1,11 +1,16 @@
-FROM docker-hub-remote.dr.corp.adobe.com/node:14.17.6-alpine3.14 AS builder
+FROM docker-hub-remote.dr.corp.adobe.com/node:14.17.6-alpine3.14 AS nodebuilder
 
 COPY . /build
 WORKDIR /build
 
-RUN addgroup -S -g 1000 user && \
-    adduser -S -u 1000 -g user user
-RUN yarn build --release --skip-os-packages --skip-docker-centos --skip-docker-ubi
+RUN addgroup -S -g 22222 user && \
+    adduser -S -u 22222 -g user user
+
+RUN apk --no-cache --virtual build-dependencies add \
+  python3
+RUN yarn install && \
+    yarn kbn bootstrap && \
+    yarn build --release --skip-os-packages --skip-docker-centos --skip-docker-ubi
 
 ################################################################################
 # This Dockerfile was generated from the template at:
@@ -30,7 +35,7 @@ FROM docker-hub-remote.dr.corp.adobe.com/centos:8 AS builder
 
 RUN mkdir /usr/share/kibana
 WORKDIR /usr/share/kibana
-COPY --from=builder /build/target/kibana-*-linux-x86_64.tar.gz /opt/kibana.tar.gz
+COPY --from=nodebuilder /build/target/kibana-*-linux-x86_64.tar.gz /opt/kibana.tar.gz
 RUN tar --strip-components=1 -zxf /opt/kibana.tar.gz
 # Ensure that group permissions are the same as user permissions.
 # This will help when relying on GID-0 to run Kibana, rather than UID-1000.
@@ -83,7 +88,7 @@ RUN echo "5dcd1c336cc9344cb77c03a0cd8982ca8a7dc97d620fd6c9c434e02dcb1ceeb3  /usr
 RUN fc-cache -v
 
 # Bring in Kibana from the initial stage.
-COPY --from=builder --chown=1000:0 /usr/share/kibana /usr/share/kibana
+COPY --from=builder --chown=22222:0 /usr/share/kibana /usr/share/kibana
 WORKDIR /usr/share/kibana
 RUN ln -s /usr/share/kibana /opt/kibana
 
@@ -91,11 +96,11 @@ ENV ELASTIC_CONTAINER true
 ENV PATH=/usr/share/kibana/bin:$PATH
 
 # Set some Kibana configuration defaults.
-COPY --chown=1000:0 config/kibana.yml /usr/share/kibana/config/kibana.yml
+COPY --chown=22222:0 config/kibana.yml /usr/share/kibana/config/kibana.yml
 
 # Add the launcher/wrapper script. It knows how to interpret environment
 # variables and translate them to Kibana CLI options.
-COPY --chown=1000:0 bin/kibana-docker /usr/local/bin/
+#COPY --chown=1000:0 bin/kibana-docker /usr/local/bin/
 
 # Ensure gid 0 write permissions for OpenShift.
 RUN chmod g+ws /usr/share/kibana && \
@@ -105,8 +110,8 @@ RUN chmod g+ws /usr/share/kibana && \
 RUN find / -xdev -perm -4000 -exec chmod u-s {} +
 
 # Provide a non-root user to run the process.
-RUN groupadd --gid 1000 kibana && \
-    useradd --uid 1000 --gid 1000 -G 0 \
+RUN groupadd --gid 22222 kibana && \
+    useradd --uid 22222 --gid 22222 -G 0 \
       --home-dir /usr/share/kibana --no-create-home \
       kibana
 
